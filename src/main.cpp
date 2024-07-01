@@ -1,8 +1,13 @@
 #include "raylib.h"
+#include <cstddef>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <functional>
+#include <iostream>
 #include <limits>
 #include <queue>
+#include <string>
 #include <vector>
 
 struct Cell {
@@ -78,6 +83,54 @@ int Heuristic(Cell *start, Cell *end) {
   return abs(x1 - x2) + abs(y1 - y2);
 }
 
+float CreateGrid(std::vector<Cell> &grid, int gridSize, int windowWidth) {
+  int cellWidth = windowWidth / gridSize;
+
+  for (int row = 0; row < gridSize; row++) {
+    for (int col = 0; col < gridSize; col++) {
+      grid.emplace_back(Cell({static_cast<float>(col * cellWidth),
+                              static_cast<float>(row * cellWidth)},
+                             row, col, gridSize));
+    }
+  }
+  return cellWidth;
+}
+
+bool FillGridFromFile(const std::string &path, std::vector<Cell> &grid,
+                      int gridSize) {
+  std::cout << path << "\n";
+
+  if (!std::filesystem::exists(path)) {
+    std::cerr << "File does not exist: " << path << "\n";
+    return false;
+  }
+  std::ifstream mazeFile(path);
+  if (!mazeFile.is_open()) {
+    return false;
+  }
+
+  std::vector<std::string> maze = {};
+  std::string line;
+  while (std::getline(mazeFile, line)) {
+    maze.push_back(line);
+  }
+
+  for (size_t row = 0; row < maze.size(); row++) {
+    for (size_t col = 0; col < maze[row].length(); col++) {
+      std::string &string = maze[row];
+      Cell &currCell = grid[(row * gridSize) + col];
+
+      if (string[col] == '#') {
+        currCell.isbarrier = true;
+      } else if (string[col] == 's') {
+        currCell.isStart = true;
+      } else if (string[col] == 'e') {
+        currCell.isEnd = true;
+      }
+    }
+  }
+  return true;
+}
 void ReconstructPath(Cell *end, Cell *start, std::function<void()> &render) {
   Cell *curr = end->parent;
 
@@ -95,7 +148,6 @@ bool PathFind(std::vector<Cell> &grid, Cell *start, Cell *end,
     return false;
   }
 
-  int count = 0;
   std::priority_queue<Cell *, std::vector<Cell *>, CompareNode> openSet;
   start->hScore = Heuristic(start, end);
   start->gScore = 0;
@@ -105,20 +157,20 @@ bool PathFind(std::vector<Cell> &grid, Cell *start, Cell *end,
   while (!openSet.empty()) {
     Cell *current = openSet.top();
     openSet.pop();
-
     if (current == end) {
       ReconstructPath(end, start, render);
       return true;
     }
 
     for (Cell *neighbour : current->neighbours) {
+
       if (neighbour->isVisidted) {
         continue;
       }
 
       int pendingGScore = current->gScore + 1;
-
       if (neighbour->gScore > pendingGScore) {
+
         neighbour->parent = current;
         neighbour->hScore = Heuristic(neighbour, end);
         neighbour->gScore = pendingGScore;
@@ -136,19 +188,6 @@ bool PathFind(std::vector<Cell> &grid, Cell *start, Cell *end,
       current->isVisidted = true;
   }
   return false;
-}
-
-float CreateGrid(std::vector<Cell> &grid, int gridSize, int windowWidth) {
-  int cellWidth = windowWidth / gridSize;
-
-  for (int row = 0; row < gridSize; row++) {
-    for (int col = 0; col < gridSize; col++) {
-      grid.emplace_back(Cell({static_cast<float>(col * cellWidth),
-                              static_cast<float>(row * cellWidth)},
-                             row, col, gridSize));
-    }
-  }
-  return cellWidth;
 }
 
 void RenderGrid(std::vector<Cell> &grid, float cellWidth, int gridSize) {
@@ -177,19 +216,20 @@ void RenderGrid(std::vector<Cell> &grid, float cellWidth, int gridSize) {
   for (int x = 0; x < gridSize; x++) {
     Vector2 start = {x * cellWidth, 0};
     Vector2 end = {x * cellWidth, float(GetScreenHeight())};
-    DrawLineV(start, end, BLACK);
+    DrawLineEx(start, end, 1, BLACK);
   }
 
   for (int y = 0; y < gridSize; y++) {
     Vector2 start = {0, y * cellWidth};
     Vector2 end = {float(GetScreenWidth()), y * cellWidth};
-    DrawLineV(start, end, BLACK);
+    DrawLineEx(start, end, 1, BLACK);
   }
 }
 
 void GetInput(std::vector<Cell> &grid, float cellWidth, int gridSize,
-              int &inputState, std::function<void()> &render) {
-  if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+              int &inputState, bool &gridCleared,
+              std::function<void()> &render) {
+  if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && gridCleared) {
     Vector2 mousePos = GetMousePosition();
 
     int row = int(mousePos.y / cellWidth);
@@ -209,7 +249,7 @@ void GetInput(std::vector<Cell> &grid, float cellWidth, int gridSize,
                !current.isbarrier) {
       current.isbarrier = true;
     }
-  } else if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
+  } else if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT) && gridCleared) {
     Vector2 mousePos = GetMousePosition();
 
     int row = int(mousePos.y / cellWidth);
@@ -231,6 +271,7 @@ void GetInput(std::vector<Cell> &grid, float cellWidth, int gridSize,
 
   if (IsKeyPressed(KEY_SPACE)) {
 
+    gridCleared = false;
     Cell *start = nullptr;
     Cell *end = nullptr;
 
@@ -244,7 +285,6 @@ void GetInput(std::vector<Cell> &grid, float cellWidth, int gridSize,
         end = &cell;
       }
     }
-
     PathFind(grid, start, end, render);
   }
 
@@ -252,21 +292,53 @@ void GetInput(std::vector<Cell> &grid, float cellWidth, int gridSize,
     grid.clear();
     CreateGrid(grid, gridSize, GetScreenWidth());
     inputState = 0;
+    gridCleared = true;
   }
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+  std::string file = "";
+  bool hasFile = false;
+
+  if (argc == 2) {
+    std::string arg = argv[1];
+    if (arg.substr(0, 7) != "--maze=") {
+      std::cout << "invalid option\n";
+      std::cout << "usage: \"" << argv[0] << "\" for blank map\n";
+      std::cout << "or " << argv[0]
+                << " --maze=path_to_maze_file.txt fto read map file\n";
+      return -1;
+    } else {
+      file = arg.substr(7);
+      hasFile = true;
+    }
+  } else if (argc > 2) {
+    std::cout << "too many argumnets!\n";
+    std::cout << "usage: " << argv[0] << " for blank map\n";
+    std::cout << "or " << argv[0]
+              << " --maze=path_to_maze_file.txt fto read map file\n";
+    return -1;
+  }
 
   InitWindow(800, 800, "A* Pathfinding");
-  SetTargetFPS(60);
 
   // Grid
   std::vector<Cell> grid = {};
-  int gridSize = 40;
+  int gridSize = 100;
 
   float cellSize = CreateGrid(grid, gridSize, GetScreenWidth());
 
+  if (hasFile) {
+    if (!FillGridFromFile(file, grid, gridSize)) {
+      std::cout << "Failed to read maze, file\n";
+      return -1;
+    }
+  }
+
+
   int inputState = 0;
+  bool gridCleared = true;
+
 
   std::function<void()> render = [&]() -> void {
     BeginDrawing();
@@ -276,7 +348,7 @@ int main(void) {
   };
 
   while (!WindowShouldClose()) {
-    GetInput(grid, cellSize, gridSize, inputState, render);
+    GetInput(grid, cellSize, gridSize, inputState, gridCleared, render);
     render();
   }
 
