@@ -8,6 +8,7 @@
 #include <limits>
 #include <queue>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 struct Cell {
@@ -28,8 +29,10 @@ struct Cell {
   Cell *parent = nullptr;
 
   std::vector<Cell *> neighbours;
+
   Cell(Vector2 position, int row, int col, int gridSize)
       : position(position), row(row), col(col), gridSize(gridSize) {}
+
   void UpdateNeigbours(std::vector<Cell> &grid) {
     if (row < gridSize - 1) {
       Cell &curr = (grid[(gridSize * (row + 1)) + col]);
@@ -55,6 +58,32 @@ struct Cell {
         neighbours.push_back(&curr);
       }
     }
+
+    // Diagonal neighbors
+    if (row < gridSize - 1 && col < gridSize - 1) {
+      Cell &curr = (grid[(gridSize * (row + 1)) + (col + 1)]);
+      if (!curr.isbarrier) {
+        neighbours.push_back(&curr);
+      }
+    }
+    if (row < gridSize - 1 && col > 0) {
+      Cell &curr = (grid[(gridSize * (row + 1)) + (col - 1)]);
+      if (!curr.isbarrier) {
+        neighbours.push_back(&curr);
+      }
+    }
+    if (row > 0 && col < gridSize - 1) {
+      Cell &curr = (grid[(gridSize * (row - 1)) + (col + 1)]);
+      if (!curr.isbarrier) {
+        neighbours.push_back(&curr);
+      }
+    }
+    if (row > 0 && col > 0) {
+      Cell &curr = (grid[(gridSize * (row - 1)) + (col - 1)]);
+      if (!curr.isbarrier) {
+        neighbours.push_back(&curr);
+      }
+    }
   }
 
   void Update() { _fScore = gScore + hScore; }
@@ -74,13 +103,9 @@ struct CompareNode {
 };
 
 int Heuristic(Cell *start, Cell *end) {
-
-  int x1 = start->position.x;
-  int y1 = start->position.y;
-  int x2 = end->position.x;
-  int y2 = end->position.y;
-
-  return abs(x1 - x2) + abs(y1 - y2);
+  int dx = abs(start->col - end->col);
+  int dy = abs(start->row - end->row);
+  return 10 * (dx + dy) + (14 - 2 * 10) * std::min(dx, dy);
 }
 
 float CreateGrid(std::vector<Cell> &grid, int gridSize, int windowWidth) {
@@ -149,10 +174,12 @@ bool PathFind(std::vector<Cell> &grid, Cell *start, Cell *end,
   }
 
   std::priority_queue<Cell *, std::vector<Cell *>, CompareNode> openSet;
+  std::unordered_set<Cell*> closedSet;
   start->hScore = Heuristic(start, end);
   start->gScore = 0;
   start->Update();
   openSet.push(start);
+
 
   while (!openSet.empty()) {
     Cell *current = openSet.top();
@@ -168,9 +195,11 @@ bool PathFind(std::vector<Cell> &grid, Cell *start, Cell *end,
         continue;
       }
 
-      int pendingGScore = current->gScore + 1;
+      int pendingGScore = current->gScore + ((current->row == neighbour->row ||
+                                              current->col == neighbour->col)
+                                                 ? 10
+                                                 : 14);
       if (neighbour->gScore > pendingGScore) {
-
         neighbour->parent = current;
         neighbour->hScore = Heuristic(neighbour, end);
         neighbour->gScore = pendingGScore;
@@ -212,18 +241,18 @@ void RenderGrid(std::vector<Cell> &grid, float cellWidth, int gridSize) {
     DrawRectangleV(cell.position, {cellWidth, cellWidth}, color);
   }
 
-  // Vertical Lines
-  for (int x = 0; x < gridSize; x++) {
-    Vector2 start = {x * cellWidth, 0};
-    Vector2 end = {x * cellWidth, float(GetScreenHeight())};
-    DrawLineEx(start, end, 1, BLACK);
-  }
-
-  for (int y = 0; y < gridSize; y++) {
-    Vector2 start = {0, y * cellWidth};
-    Vector2 end = {float(GetScreenWidth()), y * cellWidth};
-    DrawLineEx(start, end, 1, BLACK);
-  }
+  // // Vertical Lines
+  // for (int x = 0; x < gridSize; x++) {
+  //   Vector2 start = {x * cellWidth, 0};
+  //   Vector2 end = {x * cellWidth, float(GetScreenHeight())};
+  //   DrawLineEx(start, end, 1, BLACK);
+  // }
+  //
+  // for (int y = 0; y < gridSize; y++) {
+  //   Vector2 start = {0, y * cellWidth};
+  //   Vector2 end = {float(GetScreenWidth()), y * cellWidth};
+  //   DrawLineEx(start, end, 1, BLACK);
+  // }
 }
 
 void GetInput(std::vector<Cell> &grid, float cellWidth, int gridSize,
@@ -321,10 +350,11 @@ int main(int argc, char **argv) {
   }
 
   InitWindow(800, 800, "A* Pathfinding");
+  SetTargetFPS(60);
 
   // Grid
   std::vector<Cell> grid = {};
-  int gridSize = 100;
+  int gridSize = 80;
 
   float cellSize = CreateGrid(grid, gridSize, GetScreenWidth());
 
@@ -335,10 +365,8 @@ int main(int argc, char **argv) {
     }
   }
 
-
   int inputState = 0;
   bool gridCleared = true;
-
 
   std::function<void()> render = [&]() -> void {
     BeginDrawing();
