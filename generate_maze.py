@@ -50,7 +50,7 @@ def save_maze_to_file(maze, filename):
         for row in maze:
             f.write(''.join(row) + '\n')
 
-size = 80
+size = 160
 filename = 'maze.txt'
 
 maze = generate_maze(size)

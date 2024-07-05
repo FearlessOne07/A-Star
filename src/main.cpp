@@ -1,4 +1,5 @@
 #include "raylib.h"
+#include <cmath>
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
@@ -174,12 +175,10 @@ bool PathFind(std::vector<Cell> &grid, Cell *start, Cell *end,
   }
 
   std::priority_queue<Cell *, std::vector<Cell *>, CompareNode> openSet;
-  std::unordered_set<Cell*> closedSet;
   start->hScore = Heuristic(start, end);
   start->gScore = 0;
   start->Update();
   openSet.push(start);
-
 
   while (!openSet.empty()) {
     Cell *current = openSet.top();
@@ -198,14 +197,14 @@ bool PathFind(std::vector<Cell> &grid, Cell *start, Cell *end,
       int pendingGScore = current->gScore + ((current->row == neighbour->row ||
                                               current->col == neighbour->col)
                                                  ? 10
-                                                 : 14);
+                                                 : floor(sqrt(2) * 10));
       if (neighbour->gScore > pendingGScore) {
         neighbour->parent = current;
         neighbour->hScore = Heuristic(neighbour, end);
         neighbour->gScore = pendingGScore;
         neighbour->Update();
 
-        if (!neighbour->isVisidted) {
+        if (!neighbour->isOpen) {
           neighbour->isOpen = true;
           openSet.push(neighbour);
         }
@@ -350,11 +349,11 @@ int main(int argc, char **argv) {
   }
 
   InitWindow(800, 800, "A* Pathfinding");
-  SetTargetFPS(60);
+  // SetTargetFPS(60);
 
   // Grid
   std::vector<Cell> grid = {};
-  int gridSize = 80;
+  int gridSize = 160;
 
   float cellSize = CreateGrid(grid, gridSize, GetScreenWidth());
 
